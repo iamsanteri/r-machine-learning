@@ -1,0 +1,359 @@
+# Setting up the environment
+rm(list=ls())
+dev.off()
+setwd("/Users/santeri/Documents/R_Studio/Datasets/Assignment_2")
+
+# A scientific notation switch for the results in console. Switch between 100 and 0. 
+options(scipen = 0)
+
+# Packages check. If not available, use command such s: install.packages("dplyr")
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(purrr)
+library(NbClust)
+
+# ------- Part 1: Regression analysis ------->
+
+# Loading the data
+dataKidneyReg = read.csv("dataKidneyReg_Mac.csv", header = TRUE, sep=";")
+
+# Explore the data characteristics and structure
+str(dataKidneyReg)
+head(dataKidneyReg)
+
+# Check for any missing or null data
+any(is.na(dataKidneyReg))
+any(is.null(dataKidneyReg))
+
+# Select features for closer inspection
+data_narrowed = select(dataKidneyReg, Age, Blood_Pressure, Sugar, Diabetes, Glucose)
+
+# --- Looking into Age ---
+min(data_narrowed$Age)
+max(data_narrowed$Age)
+mean(data_narrowed$Age)
+median(data_narrowed$Age)
+
+# Drawing visuals: Age
+par(mfrow=c(1, 2))
+boxplot(data_narrowed$Age, main="Age: Outliers?", xlab="Boxplot", ylab="Age (in years)")
+hist(data_narrowed$Age, main="Age distribution", xlab="Age buckets", ylab="Number of observations", breaks=10)
+
+# --- Looking into Blood_Pressure ---
+min(data_narrowed$Blood_Pressure)
+max(data_narrowed$Blood_Pressure)
+mean(data_narrowed$Blood_Pressure)
+median(data_narrowed$Blood_Pressure)
+
+# Drawing visuals: Blood_Pressure ---
+par(mfrow=c(1, 2))
+boxplot(data_narrowed$Blood_Pressure, main="Blood_Pressure: Outliers?", xlab="Boxplot", ylab="Blood pressure (in mm/Hg")
+hist(data_narrowed$Blood_Pressure, main="Blood_Pressure", xlab="Blood pressure buckets", ylab="Number of observations", breaks=6)
+
+# --- Looking into Sugar ---
+min(data_narrowed$Sugar)
+max(data_narrowed$Sugar)
+
+# Drawing visuals: Sugar ---
+ggplot(data_narrowed, aes(x=factor(Sugar))) +
+  geom_bar() +
+  ggtitle("Number of observations") + 
+  xlab("Sugar level") +
+  ylab("Amount of observations") +
+  geom_text(aes(label = ..count..), stat = "count", vjust = -0.3)
+
+# --- Looking into Diabetes ---
+count_of_observations_total = length(data_narrowed$Diabetes)
+count_of_observations_with_diabetes = summarise(data_narrowed, count_of_diabetes_true=sum(Diabetes))
+count_of_observations_without_diabetes = count_of_observations_total - count_of_observations_with_diabetes
+percentage_of_people_with_diabetes = count_of_observations_with_diabetes / count_of_observations_total
+
+# Drawing visuals: Diabetes ---
+ggplot(data_narrowed, aes(x=factor(Diabetes))) +
+  geom_bar() +
+  ggtitle("Number of observations") + 
+  xlab("Diabetes") +
+  ylab("Amount of observations") +
+  geom_text(aes(label = ..count..), stat = "count", vjust = -0.3)
+
+# --- Looking into Glucose ---
+min(data_narrowed$Glucose)
+max(data_narrowed$Glucose)
+mean(data_narrowed$Glucose)
+median(data_narrowed$Glucose)
+
+# Drawing visuals: Glucose ---
+par(mfrow=c(1, 2))
+boxplot(data_narrowed$Glucose, main="Glucose: Outliers?", xlab="Boxplot", ylab="Glucose (in mgs/dl)")
+hist(data_narrowed$Glucose, main="Glucose", xlab="Glucose buckets", ylab="Number of observations", breaks=5)
+
+# --- Correlation analysis on all variables ---
+
+correlation_table = cor(dataKidneyReg)
+correlation_table
+corrplot(correlation_table, "number")
+
+# Splitting into independent and dependent variables 
+dependent_variable = dataKidneyReg[,7]
+expl_variables_1 = dataKidneyReg[,1:6] 
+expl_variables_2 = dataKidneyReg[,8:16]
+expl_variables = cbind(expl_variables_1, expl_variables_2)
+
+cor(expl_variables)
+cor_absolute_values = abs(cor(expl_variables))
+diag(cor_absolute_values)=0
+
+# --- Pre-model preparations ---
+
+# Removing highly correlated variables with absolute correlation of higher than 0.8
+while(max(cor_absolute_values)>=0.8) {
+  
+  # Find explanatory variables with highest correlation
+  maxvar = which(cor_absolute_values==max(cor_absolute_values), arr.ind = TRUE)
+  
+  # FYI 1 - Printing to console the comparison of means of either variable's correlation to all other variables
+  print(rowMeans(cor_absolute_values[maxvar[,1],]))
+  
+  # Select variable that has the highest average correlation
+  maxavg = which.max(rowMeans(cor_absolute_values[maxvar[,1],]))
+  
+  # FYI 2 - Printing to console the deleted variable
+  print(rownames(maxvar)[maxvar[,1]==maxvar[maxavg,1]])
+  
+  # Removal
+  expl_variables = expl_variables[,-maxvar[maxavg,1]]
+  cor_absolute_values = cor_absolute_values[-maxvar[maxavg,1], -maxvar[maxavg,1]]
+}
+
+# Combine the data back to prepare for generating the model
+pre_model_data = cbind("Glucose" = dependent_variable, expl_variables)
+
+# --- Implementing and improving linear regression ---
+
+my_lin_reg_model = lm(Glucose~Age+Blood_Pressure+Gravity+Sugar+Red_Blood+Bacteria+Sodium+Potassium+Hemoglobin+White_BloodCount+Red_BloodCount+Diabetes+Pedal_Edema+Anemia, data=pre_model_data)
+summary(my_lin_reg_model)
+
+# Draw fitted values vs. original data (before)
+
+plot(1:length(pre_model_data$Glucose), pre_model_data$Glucose, col="red", xlab="Observations", ylab="Glucose", main="Fitted vs. Original Values (before)", type="o", pch=16, cex=0.5)
+lines(1:length(pre_model_data$Glucose), fitted.values(my_lin_reg_model), col="blue", type="o", pch=16, cex=0.5)
+legend("topright", legend=c("Original data", "Fitted data"), col=c("red", "blue"), lty=1, cex=0.8)
+
+# ---> Start simplifying the model
+
+# Removed Sodium
+my_lin_reg_model_improved = lm(Glucose~Age+Blood_Pressure+Gravity+Sugar+Red_Blood+Bacteria+Potassium+Hemoglobin+White_BloodCount+Red_BloodCount+Diabetes+Pedal_Edema+Anemia, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Removed White_BloodCount
+my_lin_reg_model_improved = lm(Glucose~Age+Gravity+Sugar+Red_Blood+Bacteria+Potassium+Hemoglobin+Red_BloodCount+Diabetes+Pedal_Edema+Anemia, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Removed Hemoglobin
+my_lin_reg_model_improved = lm(Glucose~Age+Gravity+Sugar+Red_Blood+Bacteria+Potassium+Red_BloodCount+Diabetes+Pedal_Edema+Anemia, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Removed Red_BloodCount
+my_lin_reg_model_improved = lm(Glucose~Age+Gravity+Sugar+Red_Blood+Bacteria+Potassium+Diabetes+Pedal_Edema+Anemia, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Removed Bacteria
+my_lin_reg_model_improved = lm(Glucose~Age+Gravity+Sugar+Red_Blood+Potassium+Diabetes+Pedal_Edema+Anemia, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Removed Anemia
+my_lin_reg_model_improved = lm(Glucose~Age+Gravity+Sugar+Red_Blood+Potassium+Diabetes+Pedal_Edema, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Removed Age
+my_lin_reg_model_improved = lm(Glucose~Gravity+Sugar+Red_Blood+Potassium+Diabetes+Pedal_Edema, data=pre_model_data)
+summary(my_lin_reg_model_improved)
+
+# Draw fitted values vs. original data (after)
+plot(1:length(pre_model_data$Glucose), pre_model_data$Glucose, col="red", xlab="Observations", ylab="Glucose", main="Fitted vs. Original Values (after)", type="o", pch=16, cex=0.5)
+lines(1:length(pre_model_data$Glucose), fitted.values(my_lin_reg_model_improved), col="blue", type="o", pch=16, cex=0.5)
+legend("topright", legend=c("Original data", "Fitted data"), col=c("red", "blue"), lty=1, cex=0.8)
+
+# Check coefficients for the model equation
+coef(my_lin_reg_model_improved)
+
+# --- Evaluating the resulting model ---
+
+# Mean of residuals is (around) zero
+mean(residuals(my_lin_reg_model_improved))
+
+# Homoskedasticity and plotting residuals over time
+plot(residuals(my_lin_reg_model_improved), type="p", col="blue", ylim=c(-200,200), pch=16,
+     ylab = "Residuals", xlab="Observations", main = "Residuals over time")
+abline(a=3*sd(residuals(my_lin_reg_model_improved)), b=0, col="red", lty=2)
+abline(a=-3*sd(residuals(my_lin_reg_model_improved)), b=0, col="red", lty=2)
+abline(a=0, b=0, col="black", lty=2)
+
+# Correlation between residuals and the independent variable(s)
+cor(residuals(my_lin_reg_model_improved), pre_model_data[,2:15])
+
+# 6: Normal distribution of residuals
+JarqueBera.test(residuals(my_lin_reg_model_improved))
+
+# Using a single observation to predict response for doctors and patients
+new = data.frame(Gravity=c(1.010), Sugar=c(1), Red_Blood=c(1), Potassium=c(3.4), Diabetes=c(1), Pedal_Edema=c(1))
+predict(my_lin_reg_model_improved, newdata = new, interval="confidence")
+
+# ------- Part 2: Clustering ------->
+
+# Loading the data
+data_shopping = read.csv("dataShopping_Mac.csv", header = TRUE, sep=";")
+
+# Explore the data characteristics and structure
+str(data_shopping)
+head(data_shopping)
+
+# Check for any missing or null data
+any(is.na(data_shopping))
+any(is.null(data_shopping))
+
+# --- Looking into variable: Administrative_Duration ---
+summary(data_shopping$Administrative_Duration)
+
+# Drawing visuals: Administrative_Duration ---
+par(mfrow=c(1, 3))
+plot(1:length(data_shopping$Administrative_Duration), data_shopping$Administrative_Duration, main="", xlab="Observations", ylab="Admin. duration (sec.)", pch=16, cex=0.4)
+boxplot(data_shopping$Administrative_Duration, main="", xlab="Boxplot", ylab="Admin. duration (sec.)")
+hist(data_shopping$Administrative_Duration, main="", xlab="Duration buckets (seconds)", ylab="Number of observations", breaks=25)
+
+# --- Looking into variable: Informational_Duration ---
+summary(data_shopping$Informational_Duration)
+
+# Drawing visuals: Informational_Duration ---
+par(mfrow=c(1, 3))
+plot(1:length(data_shopping$Informational_Duration), data_shopping$Informational_Duration, main="", xlab="Observations", ylab="Info. duration (sec.)", pch=16, cex=0.4)
+boxplot(data_shopping$Informational_Duration, main="", xlab="Boxplot", ylab="Info. duration (sec.)")
+hist(data_shopping$Informational_Duration, main="", xlab="Duration buckets (seconds)", ylab="Number of observations", breaks=25)
+
+# --- Looking into variable: ProductRelated_Duration ---
+summary(data_shopping$ProductRelated_Duration)
+
+# Drawing visuals: ProductRelated_Duration --
+par(mfrow=c(1, 3))
+plot(1:length(data_shopping$ProductRelated_Duration), data_shopping$ProductRelated_Duration, main="", xlab="Observations", ylab="Product-related duration (sec.)", pch=16, cex=0.4)
+boxplot(data_shopping$ProductRelated_Duration, main="", xlab="Boxplot", ylab="Product-related duration (sec.)")
+hist(data_shopping$ProductRelated_Duration, main="", xlab="Duration buckets (seconds)", ylab="Number of observations", breaks=25)
+
+# --- Looking into variable: BounceRates ---
+summary(data_shopping$BounceRates)
+
+# Drawing visuals: BounceRates --
+par(mfrow=c(1, 2))
+boxplot(data_shopping$BounceRates, main="BounceRates: Outliers?", xlab="Boxplot", ylab="Bounce rate (%)")
+hist(data_shopping$BounceRates, main="Bounce rates distribution", xlab="Precentage buckets (%)", ylab="Number of observations", breaks=20)
+
+# --- Looking into variable: SpecialDay ---
+count_of_SpecialDay_observations_total = length(data_shopping$SpecialDay)
+count_of_no_SpecialDay = sum(data_shopping$SpecialDay == 0.0)
+count_of_SpecialDay_02 = sum(data_shopping$SpecialDay == 0.2)
+count_of_SpecialDay_04 = sum(data_shopping$SpecialDay == 0.4)
+count_of_SpecialDay_06 = sum(data_shopping$SpecialDay == 0.6)
+count_of_SpecialDay_08 = sum(data_shopping$SpecialDay == 0.8)
+count_of_on_SpecialDay = sum(data_shopping$SpecialDay == 1.0)
+
+proportion_of_not_close_to_Special_Day = count_of_no_SpecialDay / count_of_SpecialDay_observations_total
+proportion_of_close_to_Special_Day = (count_of_SpecialDay_02 + count_of_SpecialDay_04 + count_of_SpecialDay_06 + count_of_SpecialDay_08) / count_of_SpecialDay_observations_total
+proportion_of_on_SpecialDay = count_of_on_SpecialDay / count_of_SpecialDay_observations_total
+
+# --- Looking into variable: NewVisitor ---
+count_of_new_visitors = sum(data_shopping$NewVisitor == 1) 
+count_of_not_new_visitors = sum(data_shopping$NewVisitor == 0)
+
+proportion_of_new_visitors = count_of_new_visitors / count_of_not_new_visitors
+
+# Drawing visuals: NewVisitor --
+NewVisitorNames = c("No", "Yes")
+my_bar_plot = barplot(table(data_shopping$NewVisitor), main="User visited for the first time?", names=NewVisitorNames, ylab="Count")
+
+# --- Looking into the mystery variable that is not described: PageValues ---
+summary(data_shopping$PageValues)
+plot(1:length(data_shopping$PageValues), data_shopping$PageValues, main="Mystery variable: PageValues", xlab="Observations", ylab="Page values...?", pch=16, cex=0.4)
+data_shopping$PageValues = NULL # <-- Deleting mystery variable from the data
+
+# --- Looking into variable: Revenue ---
+count_ended_up_with_purchase = sum(data_shopping$Revenue == 1) 
+count_ended_up_without_purchase = sum(data_shopping$Revenue == 0)
+
+proportion_of_ended_up_with_purchase = count_ended_up_with_purchase / count_ended_up_without_purchase
+
+# Drawing visuals: Revenue --
+RevenueNames = c("No", "Yes")
+my_bar_plot = barplot(table(data_shopping$Revenue), main="Session ended with a purchase?", names=RevenueNames, ylab="Count")
+
+# --- Peforming correlation analysis
+correlation_table_shopping = cor(data_shopping)
+correlation_table_shopping
+corrplot(correlation_table_shopping, "number")
+
+# --- Peforming data normalization
+data_shopping_prepared_for_normalization = data_shopping
+data_shopping_prepared_for_normalization$Revenue = NULL # <-- Removed variable
+normalized_data_shopping = apply(data_shopping_prepared_for_normalization, 2, rescale, to=c(0,1))
+summary(normalized_data_shopping)
+
+# --- Initial cluster analysis with random count of clusters
+first_model = kmeans(normalized_data_shopping, centers = 3, nstart = 5)
+
+# Examining first model
+first_model
+first_model$cluster
+
+# --- Starting to look into optimal amounts of clusters
+first_model$tot.withinss
+first_model$withinss
+
+# Try with number of clusters between 1 and 10, starting wit the the elbow method
+TWSS = map_dbl(1:10, function(k) {
+  model = kmeans(normalized_data_shopping, centers=k, nstart = 20)
+  model$tot.withinss
+})
+
+# Run Silhouette, Gap Statistic and Calinski-Harabasz index
+SilClust = NbClust(normalized_data_shopping, distance = "euclidean", min.nc = 2, max.nc = 10, method="kmeans", index="silhouette")
+GapClust = NbClust(normalized_data_shopping, distance = "euclidean", min.nc = 2, max.nc = 10, method="kmeans", index="gap")
+CHClust = NbClust(normalized_data_shopping, distance = "euclidean", min.nc = 2, max.nc = 10, method="kmeans", index="ch")
+
+# Start drawing graphs for visualization, focus on the Elbow Method
+plot(1:10, TWSS, type="o", main="Elbow method", xlab="Number of clusters", ylab="TWSS")
+
+# Additional graphs for the Calinski-Harabasz Index, Silhouette and GAP Statistic methods
+par(mfrow=c(1,3))
+plot(2:10,CHClust$All.index, main="Calinski-Harabasz Index", type="o", xlab="Number of Clusters", ylab="Calinski-Harabasz Index")
+plot(2:10,SilClust$All.index, type="o", main="Silhouette", xlab="Number of Clusters", ylab="Silhouette Value")
+plot(2:10,GapClust$All.index, type="o", main="GAP Statistic", xlab="Number of Clusters", ylab="GAP Statistic")
+
+# --- Running the final model
+final_model = kmeans(normalized_data_shopping, centers = 3, nstart = 100)
+final_model$cluster
+
+final_model$tot.withinss
+final_model$withinss
+
+# Visualize cluster sizes
+barplot(final_model$size, main="Amount of observations in cluster", names=c("1: (9 750 members)", "2: (1 693 members)", "3: (887 members)"), ylab="Count", xlab="Cluster membership")
+
+# Combining data for detailed analysis and preparing findings and conclusions 
+data_shopping_new = data_shopping %>% 
+  mutate(member = final_model$cluster) 
+
+author_analysis = data_shopping_new %>%
+  group_by(member) %>%
+  summarise_all(list(mean = mean, sd = sd))
+
+# Attempting to visualize member characteristics / Wrangling data for conclusions
+members_1 = data_shopping_new %>%
+  filter(member == 1)
+
+members_2 = data_shopping_new %>%
+  filter(member == 2)
+
+members_3 = data_shopping_new %>%
+  filter(member == 3)
+
+# ---> Task completed.
